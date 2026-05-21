@@ -184,6 +184,31 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .brd-card-meta{color:var(--text3);font-size:9.5px;margin-top:3px;font-family:'DM Mono',monospace}
 .brd-card.is-final .brd-card-meta{color:rgba(251,191,36,.6)}
 
+/* TEAM INFO */
+.ti-empty{padding:2rem 0;text-align:center;color:var(--text3);font-size:13px}
+.ti-header{margin-top:1rem;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.ti-stripes{height:64px}
+.ti-header-body{padding:14px 16px;background:var(--surface);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ti-team-name{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-.01em}
+.ti-meta{font-size:12px;color:var(--text2);margin-top:2px}
+.ti-section{margin-top:1.25rem}
+.ti-section-h{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text3);margin-bottom:8px}
+.ti-match{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);margin-bottom:5px;font-size:13px}
+.ti-match-date{min-width:74px;font-size:11px;color:var(--text3);font-family:'DM Mono',monospace}
+.ti-match-teams{font-weight:500;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ti-match-venue{font-size:11px;color:var(--text2);margin-top:2px}
+.ti-wiki{display:flex;gap:14px;padding:14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);align-items:flex-start}
+.ti-wiki img{width:120px;height:120px;object-fit:cover;border-radius:var(--radius-sm);flex-shrink:0;border:1px solid var(--border)}
+.ti-wiki-body{flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.55}
+.ti-wiki-desc{font-size:11px;color:var(--text3);margin-bottom:8px;font-style:italic}
+.ti-wiki-link{display:inline-block;margin-top:8px;font-size:12px;color:var(--green);text-decoration:none}
+.ti-wiki-link:hover{text-decoration:underline}
+.ti-loading{padding:14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);font-size:13px;color:var(--text2);text-align:center}
+@media(max-width:600px){
+  .ti-wiki{flex-direction:column}
+  .ti-wiki img{width:100%;height:200px}
+}
+
 /* LOCATIONS */
 .loc-team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-bottom:1rem;max-height:200px;overflow-y:auto;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
 .loc-team-chip{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-size:12px;color:var(--text2);user-select:none;transition:all .12s}
@@ -343,6 +368,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <button class="nav-btn" data-view="groups">Groups</button>
     <button class="nav-btn" data-view="bracket">Bracket</button>
     <button class="nav-btn" data-view="locations">Locations</button>
+    <button class="nav-btn" data-view="teaminfo">Team Info</button>
     <button class="nav-btn" data-view="settings">⚙ My Teams</button>
     <button class="nav-btn" data-view="wishlist">Favorites <span class="nav-badge" id="wl-badge">0</span></button>
   </nav>
@@ -403,6 +429,15 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
       <div id="loc-picker" class="loc-team-grid"></div>
       <div id="locations-map" class="locations-map"></div>
       <div id="loc-legend" class="loc-legend"></div>
+    </div>
+
+    <!-- TEAM INFO -->
+    <div class="view" id="view-teaminfo">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.6;">
+        Pick a team to see their World Cup schedule and a Wikipedia-sourced overview. Squad/coach data coming when API-Football is wired up.
+      </div>
+      <div id="ti-picker" class="loc-team-grid"></div>
+      <div id="ti-content"></div>
     </div>
 
     <!-- SETTINGS -->
@@ -1430,6 +1465,171 @@ function toggleLocPick(team){
 }
 
 /* ─────────────────────────────────────────
+   RENDER: TEAM INFO (Wikipedia-backed)
+───────────────────────────────────────── */
+const WIKI_TITLE = {
+  'USA': "United States men's national soccer team",
+  'Korea Republic': 'South Korea national football team',
+  'Türkiye': 'Turkey national football team',
+  'Cabo Verde': 'Cape Verde national football team',
+  'Bosnia-Herzegovina': 'Bosnia and Herzegovina national football team',
+  "Côte d'Ivoire": 'Ivory Coast national football team',
+  'DR Congo': 'DR Congo national football team',
+  'Czechia': 'Czech Republic national football team',
+  'New Zealand': 'New Zealand national football team',
+};
+function wikiTitleFor(team){
+  return WIKI_TITLE[team] || `${team} national football team`;
+}
+
+let TI_PICKED = localStorage.getItem('wc26_ti_picked') || '';
+const wikiCache = {};
+function wikiCacheKey(team){ return `wc26_wiki_${team}`; }
+const WIKI_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function fetchWikiSummary(team){
+  // Memory cache
+  if (wikiCache[team]) return wikiCache[team];
+  // localStorage cache
+  try {
+    const raw = localStorage.getItem(wikiCacheKey(team));
+    if (raw){
+      const { ts, data } = JSON.parse(raw);
+      if (Date.now() - ts < WIKI_TTL_MS){
+        wikiCache[team] = data;
+        return data;
+      }
+    }
+  } catch(e){}
+  // Fetch from Wikipedia REST API
+  const title = wikiTitleFor(team);
+  const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Wikipedia ' + res.status);
+    const json = await res.json();
+    const data = {
+      title: json.title || title,
+      description: json.description || '',
+      extract: json.extract || '',
+      thumbnail: (json.thumbnail && json.thumbnail.source) || '',
+      pageUrl: json.content_urls && json.content_urls.desktop && json.content_urls.desktop.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}`,
+    };
+    wikiCache[team] = data;
+    try { localStorage.setItem(wikiCacheKey(team), JSON.stringify({ ts: Date.now(), data })); } catch(e){}
+    return data;
+  } catch (err) {
+    return { error: err.message || 'Failed to load', title, pageUrl: `https://en.wikipedia.org/wiki/${encodeURIComponent(title)}` };
+  }
+}
+
+function teamMatchesInTournament(team){
+  const out = [];
+  GROUPS.forEach(g => g.matches.forEach(m => {
+    if (m.t.includes(team)) out.push({ m, phase:'group', group:g.g });
+  }));
+  return out.sort((a,b) => new Date(a.m.k) - new Date(b.m.k));
+}
+
+function renderTeamInfoView(){
+  renderTeamInfoPicker();
+  renderTeamInfoContent();
+}
+
+function renderTeamInfoPicker(){
+  const el = document.getElementById('ti-picker');
+  if (!el) return;
+  const tournament = new Set();
+  GROUPS.forEach(g => g.teams.forEach(t => tournament.add(t)));
+  const teams = [...tournament].sort();
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  el.innerHTML = teams.map(t => {
+    const on = (t === TI_PICKED);
+    const c = teamPrimaryColor(t);
+    return `<div class="loc-team-chip${on?' on':''}" data-team="${esc(t)}" style="${on?`border-color:${c};background:${c}22`:''}">
+      <span class="loc-team-swatch" style="background:${c}"></span>
+      <span>${esc(t)}</span>
+    </div>`;
+  }).join('');
+}
+
+async function renderTeamInfoContent(){
+  const el = document.getElementById('ti-content');
+  if (!el) return;
+  if (!TI_PICKED){
+    el.innerHTML = `<div class="ti-empty">Pick a team above to see their schedule and background.</div>`;
+    return;
+  }
+  const team = TI_PICKED;
+  const group = GROUPS.find(g => g.teams.includes(team));
+  const colors = TEAM_COLORS[team] || ['#4ade80'];
+  const stripesBg = (typeof stripesGradient === 'function') ? stripesGradient(colors) : colors[0];
+  const matches = teamMatchesInTournament(team);
+
+  // Skeleton with matches + loading wiki area
+  const matchesHtml = matches.map(({m, group}) => {
+    const localDate = (typeof fmtKickoffDate === 'function' && fmtKickoffDate(m.k)) || m.date;
+    const localTime = (typeof fmtKickoffTime === 'function' && fmtKickoffTime(m.k)) || '';
+    return `<div class="ti-match">
+      <div class="ti-match-date">${localDate}</div>
+      <div style="flex:1;min-width:0">
+        <div class="ti-match-teams">${m.t}</div>
+        <div class="ti-match-venue">Group ${group} · ${m.v} · ${m.c}${localTime?` · ${localTime}`:''}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="ti-header">
+      <div class="ti-stripes" style="background:${stripesBg}"></div>
+      <div class="ti-header-body">
+        <div>
+          <div class="ti-team-name">${team}</div>
+          <div class="ti-meta">${group ? `Group ${group.g} · ${group.teams.filter(t=>t!==team).join(', ')}` : 'Not in tournament'}</div>
+        </div>
+      </div>
+    </div>
+    ${matches.length ? `
+    <div class="ti-section">
+      <div class="ti-section-h">World Cup Matches</div>
+      ${matchesHtml}
+    </div>` : ''}
+    <div class="ti-section">
+      <div class="ti-section-h">About</div>
+      <div class="ti-loading" id="ti-wiki-slot">Loading from Wikipedia…</div>
+    </div>`;
+
+  // Fetch wiki content async, then swap into the slot
+  const data = await fetchWikiSummary(team);
+  const slot = document.getElementById('ti-wiki-slot');
+  if (!slot || TI_PICKED !== team) return; // user changed teams meanwhile
+
+  if (data.error){
+    slot.outerHTML = `<div class="ti-wiki"><div class="ti-wiki-body">
+      <div class="ti-wiki-desc">Couldn't load Wikipedia overview (${data.error}).</div>
+      <a class="ti-wiki-link" href="${data.pageUrl}" target="_blank" rel="noopener">Open Wikipedia page →</a>
+    </div></div>`;
+    return;
+  }
+  const img = data.thumbnail ? `<img src="${data.thumbnail}" alt="${data.title}">` : '';
+  slot.outerHTML = `<div class="ti-wiki">
+    ${img}
+    <div class="ti-wiki-body">
+      ${data.description ? `<div class="ti-wiki-desc">${data.description}</div>` : ''}
+      <div>${data.extract || 'No summary available.'}</div>
+      <a class="ti-wiki-link" href="${data.pageUrl}" target="_blank" rel="noopener">Read more on Wikipedia →</a>
+    </div>
+  </div>`;
+}
+
+function selectTeamInfo(team){
+  TI_PICKED = team;
+  localStorage.setItem('wc26_ti_picked', team);
+  renderTeamInfoPicker();
+  renderTeamInfoContent();
+}
+
+/* ─────────────────────────────────────────
    RENDER: SETTINGS
 ───────────────────────────────────────── */
 function renderSettings(){
@@ -1501,12 +1701,19 @@ document.getElementById('nav').addEventListener('click',e=>{
   b.classList.add('active');
   document.getElementById('view-'+b.dataset.view).classList.add('active');
   if (b.dataset.view === 'locations') renderLocationsView();
+  if (b.dataset.view === 'teaminfo') renderTeamInfoView();
 });
 
 document.getElementById('loc-picker').addEventListener('click', e => {
   const chip = e.target.closest('.loc-team-chip');
   if (!chip) return;
   toggleLocPick(chip.dataset.team);
+});
+
+document.getElementById('ti-picker').addEventListener('click', e => {
+  const chip = e.target.closest('.loc-team-chip');
+  if (!chip) return;
+  selectTeamInfo(chip.dataset.team);
 });
 
 document.getElementById('filters').addEventListener('click',e=>{
