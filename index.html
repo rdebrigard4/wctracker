@@ -204,6 +204,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .ti-wiki-link{display:inline-block;margin-top:8px;font-size:12px;color:var(--green);text-decoration:none}
 .ti-wiki-link:hover{text-decoration:underline}
 .ti-loading{padding:14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface);font-size:13px;color:var(--text2);text-align:center}
+.ti-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px 16px;padding:14px 16px;border-radius:var(--radius);border:1px solid var(--border);background:var(--surface)}
+.ti-fact{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ti-fact-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+.ti-fact-val{font-size:13px;color:var(--text);line-height:1.4;word-wrap:break-word}
 @media(max-width:600px){
   .ti-wiki{flex-direction:column}
   .ti-wiki img{width:100%;height:200px}
@@ -1487,6 +1491,85 @@ const wikiCache = {};
 function wikiCacheKey(team){ return `wc26_wiki_${team}`; }
 const WIKI_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+function cleanWikitext(str){
+  if (!str) return '';
+  return str
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<ref[\s\S]*?<\/ref>/g, '')
+    .replace(/<ref[^/>]*\/>/g, '')
+    .replace(/\{\{flag\|([^|}]+)[^}]*\}\}/gi, '$1')
+    .replace(/\{\{(?:flagicon|flagdeco|flagu)[^}]*\}\}/gi, '')
+    .replace(/\{\{nowrap\|([^}]+)\}\}/gi, '$1')
+    .replace(/\{\{(?:nbsp|spaces)[^}]*\}\}/gi, ' ')
+    .replace(/\{\{[^{}]*\}\}/g, '')
+    .replace(/\{\{[^{}]*\}\}/g, '') // run twice for nested
+    .replace(/\[\[(?:[^\]|]+\|)?([^\]]+)\]\]/g, '$1')
+    .replace(/<br\s*\/?>/gi, ', ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/'''([^']*?)'''/g, '$1')
+    .replace(/''([^']*?)''/g, '$1')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getInfoboxField(wikitext, name){
+  const pattern = name.replace(/ /g, '[ _]');
+  const re = new RegExp(`\\|\\s*${pattern}\\s*=\\s*([\\s\\S]*?)(?=\\n\\s*\\||\\n\\}\\})`, 'i');
+  const m = wikitext.match(re);
+  return m ? cleanWikitext(m[1]) : '';
+}
+
+function pickFirst(...vals){ return vals.find(v => v && v.length) || ''; }
+
+function parseTeamFacts(wikitext){
+  if (!wikitext) return {};
+  return {
+    coach: pickFirst(getInfoboxField(wikitext,'Head Coach'), getInfoboxField(wikitext,'Coach'), getInfoboxField(wikitext,'Manager')),
+    captain: getInfoboxField(wikitext,'Captain'),
+    fifaCode: pickFirst(getInfoboxField(wikitext,'FIFA Trigramme'), getInfoboxField(wikitext,'FIFA Code')),
+    fifaRank: getInfoboxField(wikitext,'FIFA Rank'),
+    fifaMax: getInfoboxField(wikitext,'FIFA max'),
+    fifaMin: getInfoboxField(wikitext,'FIFA min'),
+    association: getInfoboxField(wikitext,'Association'),
+    confederation: pickFirst(getInfoboxField(wikitext,'Confederation'), getInfoboxField(wikitext,'Sub-confederation')),
+    firstGame: pickFirst(getInfoboxField(wikitext,'First game'), getInfoboxField(wikitext,'First international')),
+    largestWin: pickFirst(getInfoboxField(wikitext,'Largest win'), getInfoboxField(wikitext,'Biggest win')),
+    largestLoss: pickFirst(getInfoboxField(wikitext,'Largest loss'), getInfoboxField(wikitext,'Biggest defeat'), getInfoboxField(wikitext,'Biggest loss')),
+    wcApps: pickFirst(getInfoboxField(wikitext,'World Cup apps'), getInfoboxField(wikitext,'World cup apps')),
+    wcFirst: pickFirst(getInfoboxField(wikitext,'World Cup first'), getInfoboxField(wikitext,'World cup first')),
+    wcBest: pickFirst(getInfoboxField(wikitext,'World Cup best'), getInfoboxField(wikitext,'World cup best')),
+    regionalName: pickFirst(getInfoboxField(wikitext,'Regional Name'), getInfoboxField(wikitext,'Regional name')),
+    regionalApps: pickFirst(getInfoboxField(wikitext,'Regional cup apps'), getInfoboxField(wikitext,'Confederations Cup apps')),
+    regionalBest: pickFirst(getInfoboxField(wikitext,'Regional cup best'), getInfoboxField(wikitext,'Confederations Cup best')),
+    nicknames: pickFirst(getInfoboxField(wikitext,'Nickname'), getInfoboxField(wikitext,'Nickname(s)')),
+  };
+}
+
+async function fetchTeamFacts(team){
+  const cacheKey = `wc26_wikifacts_${team}`;
+  try {
+    const raw = localStorage.getItem(cacheKey);
+    if (raw){
+      const { ts, data } = JSON.parse(raw);
+      if (Date.now() - ts < WIKI_TTL_MS) return data;
+    }
+  } catch(e){}
+  const title = wikiTitleFor(team);
+  const url = `https://en.wikipedia.org/w/api.php?action=parse&format=json&origin=*&page=${encodeURIComponent(title)}&prop=wikitext&section=0`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Wikipedia ' + res.status);
+    const json = await res.json();
+    const wikitext = json && json.parse && json.parse.wikitext && json.parse.wikitext['*'] || '';
+    const facts = parseTeamFacts(wikitext);
+    try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: facts })); } catch(e){}
+    return facts;
+  } catch(err){
+    return {};
+  }
+}
+
 async function fetchWikiSummary(team){
   // Memory cache
   if (wikiCache[team]) return wikiCache[team];
@@ -1589,6 +1672,10 @@ async function renderTeamInfoContent(){
         </div>
       </div>
     </div>
+    <div class="ti-section">
+      <div class="ti-section-h">Quick Facts</div>
+      <div class="ti-loading" id="ti-facts-slot">Loading…</div>
+    </div>
     ${matches.length ? `
     <div class="ti-section">
       <div class="ti-section-h">World Cup Matches</div>
@@ -1599,25 +1686,54 @@ async function renderTeamInfoContent(){
       <div class="ti-loading" id="ti-wiki-slot">Loading from Wikipedia…</div>
     </div>`;
 
-  // Fetch wiki content async, then swap into the slot
-  const data = await fetchWikiSummary(team);
-  const slot = document.getElementById('ti-wiki-slot');
-  if (!slot || TI_PICKED !== team) return; // user changed teams meanwhile
+  // Kick off both fetches in parallel
+  const [summary, facts] = await Promise.all([fetchWikiSummary(team), fetchTeamFacts(team)]);
+  if (TI_PICKED !== team) return; // user changed teams meanwhile
 
-  if (data.error){
+  // Render facts
+  const factsSlot = document.getElementById('ti-facts-slot');
+  if (factsSlot){
+    const rows = [
+      ['Head Coach', facts.coach],
+      ['Captain', facts.captain],
+      ['FIFA Code', facts.fifaCode],
+      ['FIFA Rank', facts.fifaRank],
+      ['Confederation', facts.confederation],
+      ['Association', facts.association],
+      ['World Cup Appearances', facts.wcApps],
+      ['First World Cup', facts.wcFirst],
+      ['Best World Cup', facts.wcBest],
+      ['Nickname', facts.nicknames],
+      ['First Match', facts.firstGame],
+      ['Largest Win', facts.largestWin],
+      ['Largest Loss', facts.largestLoss],
+    ].filter(([_,v]) => v && v.length);
+    if (!rows.length){
+      factsSlot.outerHTML = `<div class="ti-loading">No structured data available yet.</div>`;
+    } else {
+      factsSlot.outerHTML = `<div class="ti-facts">${
+        rows.map(([k,v]) => `<div class="ti-fact"><span class="ti-fact-label">${k}</span><span class="ti-fact-val">${v}</span></div>`).join('')
+      }</div>`;
+    }
+  }
+
+  // Render summary
+  const slot = document.getElementById('ti-wiki-slot');
+  if (!slot) return;
+  if (summary.error){
     slot.outerHTML = `<div class="ti-wiki"><div class="ti-wiki-body">
-      <div class="ti-wiki-desc">Couldn't load Wikipedia overview (${data.error}).</div>
-      <a class="ti-wiki-link" href="${data.pageUrl}" target="_blank" rel="noopener">Open Wikipedia page →</a>
+      <div class="ti-wiki-desc">Couldn't load Wikipedia overview (${summary.error}).</div>
+      <a class="ti-wiki-link" href="${summary.pageUrl}" target="_blank" rel="noopener">Open Wikipedia page →</a>
     </div></div>`;
     return;
   }
-  const img = data.thumbnail ? `<img src="${data.thumbnail}" alt="${data.title}">` : '';
+  const img = summary.thumbnail ? `<img src="${summary.thumbnail}" alt="${summary.title}">` : '';
   slot.outerHTML = `<div class="ti-wiki">
     ${img}
     <div class="ti-wiki-body">
-      ${data.description ? `<div class="ti-wiki-desc">${data.description}</div>` : ''}
-      <div>${data.extract || 'No summary available.'}</div>
-      <a class="ti-wiki-link" href="${data.pageUrl}" target="_blank" rel="noopener">Read more on Wikipedia →</a>
+      ${summary.description ? `<div class="ti-wiki-desc">${summary.description}</div>` : ''}
+      <div>${summary.extract || 'No summary available.'}</div>
+      <a class="ti-wiki-link" href="${summary.pageUrl}" target="_blank" rel="noopener">Read more on Wikipedia →</a>
     </div>
   </div>`;
 }
