@@ -392,6 +392,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
         <button class="filt" data-g="sf">SF</button>
         <button class="filt" data-g="final">Final</button>
         <button class="filt fav-filt" data-g="fav">⭐ My teams</button>
+        <button class="filt sort-filt" data-g="sort">📅 By date</button>
         <div class="search-wrap"><input type="text" id="search" placeholder="Search team, city, venue…"></div>
       </div>
       <div id="match-list"></div>
@@ -1080,7 +1081,7 @@ function fmtKickoffDate(iso){
   try { return new Date(iso).toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'}); } catch(e){ return ''; }
 }
 
-let activePhase='all', favOnly=false, searchQ='';
+let activePhase='all', favOnly=false, searchQ='', sortByDate=false;
 
 /* ─────────────────────────────────────────
    RENDER: STATS
@@ -1110,25 +1111,51 @@ function renderSchedule(){
       <div class="m-star">${sv?'★':'☆'}</div>
     </div>`;
   }
-  if(activePhase==='all'||activePhase==='group'){
-    GROUPS.forEach(g=>{
-      const ms=g.matches.filter(m=>{
-        if(favOnly&&!isFav(m.t))return false;
-        if(q&&!m.t.toLowerCase().includes(q)&&!m.c.toLowerCase().includes(q)&&!m.v.toLowerCase().includes(q))return false;
-        return true;
+  if (sortByDate){
+    // Collect every match that passes filters, sort by kickoff, group by local date.
+    const all = [];
+    if(activePhase==='all'||activePhase==='group'){
+      GROUPS.forEach(g => g.matches.forEach(m => {
+        if(favOnly && !isFav(m.t)) return;
+        if(q && !m.t.toLowerCase().includes(q) && !m.c.toLowerCase().includes(q) && !m.v.toLowerCase().includes(q)) return;
+        all.push({ m, phase:'group' });
+      }));
+    }
+    if(activePhase!=='group'){
+      KNOCKOUT.forEach(k => {
+        if(activePhase!=='all' && activePhase!==k.phase) return;
+        k.matches.forEach(m => {
+          if(q && !m.t.toLowerCase().includes(q) && !(m.v||'').toLowerCase().includes(q)) return;
+          all.push({ m, phase:k.phase });
+        });
       });
-      if(ms.length)ms.forEach(m=>addMatch(m,`Group ${g.g} — ${g.teams}${g.hot?' 🔥':''}`.replace(/,/g,' ·'),'group'));
+    }
+    all.sort((a,b) => new Date(a.m.k || a.m.date) - new Date(b.m.k || b.m.date));
+    all.forEach(({ m, phase }) => {
+      const hdr = fmtKickoffDate(m.k) || m.date;
+      addMatch(m, hdr, phase);
     });
-  }
-  if(activePhase!=='group'){
-    KNOCKOUT.forEach(k=>{
-      if(activePhase!=='all'&&activePhase!==k.phase)return;
-      const ms=k.matches.filter(m=>{
-        if(q&&!m.t.toLowerCase().includes(q)&&!(m.v||'').toLowerCase().includes(q))return false;
-        return true;
+  } else {
+    if(activePhase==='all'||activePhase==='group'){
+      GROUPS.forEach(g=>{
+        const ms=g.matches.filter(m=>{
+          if(favOnly&&!isFav(m.t))return false;
+          if(q&&!m.t.toLowerCase().includes(q)&&!m.c.toLowerCase().includes(q)&&!m.v.toLowerCase().includes(q))return false;
+          return true;
+        });
+        if(ms.length)ms.forEach(m=>addMatch(m,`Group ${g.g} — ${g.teams}${g.hot?' 🔥':''}`.replace(/,/g,' ·'),'group'));
       });
-      if(ms.length)ms.forEach(m=>addMatch(m,k.label,k.phase));
-    });
+    }
+    if(activePhase!=='group'){
+      KNOCKOUT.forEach(k=>{
+        if(activePhase!=='all'&&activePhase!==k.phase)return;
+        const ms=k.matches.filter(m=>{
+          if(q&&!m.t.toLowerCase().includes(q)&&!(m.v||'').toLowerCase().includes(q))return false;
+          return true;
+        });
+        if(ms.length)ms.forEach(m=>addMatch(m,k.label,k.phase));
+      });
+    }
   }
   document.getElementById('match-list').innerHTML=html||'<div class="empty"><div class="empty-icon">🔍</div>No matches found.</div>';
 }
@@ -1838,8 +1865,11 @@ document.getElementById('filters').addEventListener('click',e=>{
   if(b.dataset.g==='fav'){
     favOnly=!favOnly;
     b.classList.toggle('on',favOnly);
+  }else if(b.dataset.g==='sort'){
+    sortByDate=!sortByDate;
+    b.classList.toggle('on',sortByDate);
   }else{
-    document.querySelectorAll('.filt:not(.fav-filt)').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.filt:not(.fav-filt):not(.sort-filt)').forEach(x=>x.classList.remove('on'));
     b.classList.add('on');
     activePhase=b.dataset.g;
   }

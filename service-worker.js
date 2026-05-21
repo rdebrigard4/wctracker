@@ -1,4 +1,4 @@
-const CACHE = 'wc26-v22';
+const CACHE = 'wc26-v23';
 const ASSETS = [
   './',
   './index.html',
