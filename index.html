@@ -199,8 +199,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .loc-legend{margin-top:1rem;display:flex;flex-direction:column;gap:10px}
 .loc-key{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--text2);padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
 .key-item{display:inline-flex;align-items:center;gap:8px}
-.key-line{width:24px;height:2px;background:var(--text2);flex-shrink:0;border-radius:1px}
-.key-line.dashed{background:transparent;border-top:2px dashed var(--text2);height:0}
+.key-line{width:26px;height:2px;background:var(--text2);flex-shrink:0;border-radius:1px}
+.key-line.dashed{background:repeating-linear-gradient(to right,var(--text2) 0 5px,transparent 5px 9px);border-radius:0}
 .key-dot{width:9px;height:9px;border-radius:50%;background:var(--text2);flex-shrink:0}
 .loc-picks{display:flex;flex-wrap:wrap;gap:6px}
 .loc-legend-item{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:14px;border:1px solid var(--border);background:var(--surface);font-size:12px;color:var(--text2)}
@@ -340,11 +340,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
   <nav class="nav" id="nav">
     <button class="nav-btn active" data-view="schedule">Schedule</button>
-    <button class="nav-btn" data-view="wishlist">Wishlist <span class="nav-badge" id="wl-badge">0</span></button>
     <button class="nav-btn" data-view="groups">Groups</button>
     <button class="nav-btn" data-view="bracket">Bracket</button>
     <button class="nav-btn" data-view="locations">Locations</button>
     <button class="nav-btn" data-view="settings">⚙ My Teams</button>
+    <button class="nav-btn" data-view="wishlist">Favorites <span class="nav-badge" id="wl-badge">0</span></button>
   </nav>
 
   <main class="main">
@@ -383,7 +383,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <!-- BRACKET -->
     <div class="view" id="view-bracket">
       <div style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.6;">
-        Visual knockout bracket — click any match to save to wishlist. Split into two pathways plus the Final view. Opponents confirmed after group stage.
+        Visual knockout bracket — click any match to save to favorites. Split into two pathways plus the Final view. Opponents confirmed after group stage.
       </div>
       <div class="bracket-tabs" id="bracket-tabs">
         <button class="bracket-tab on" data-half="left">Pathway 1 → Semifinal 1</button>
@@ -1112,7 +1112,7 @@ function renderWishlist(){
     return;
   }
   const phaseMap={group:'Group stage',r32:'Round of 32',r16:'Round of 16',qf:'Quarterfinal',sf:'Semifinal',tp:'Third Place',final:'Final'};
-  let html=`<div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem;">${ids.length} match${ids.length>1?'es':''} on your wishlist — add notes for trip planning.</div>`;
+  let html=`<div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem;">${ids.length} match${ids.length>1?'es':''} on your favorites — add notes for trip planning.</div>`;
   ids.forEach(id=>{
     const s=saved[id];
     const n=(notes[id]||'').replace(/"/g,'&quot;');
